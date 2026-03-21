@@ -1,292 +1,159 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Shoe Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Smart Insole BLE 3D</title>
     <style>
-        /* CSS for the 3D IMU Cube */
-        .scene {
-            width: 100px;
-            height: 100px;
-            perspective: 400px;
-            margin: 0 auto;
-        }
-        .cube {
-            width: 100%;
-            height: 100%;
-            position: relative;
-            transform-style: preserve-3d;
-            transform: translateZ(-50px);
-            transition: transform 0.1s linear;
-        }
-        .cube__face {
-            position: absolute;
-            width: 100px;
-            height: 100px;
-            border: 2px solid #3b82f6;
-            background: rgba(59, 130, 246, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: white;
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
-        }
-        .cube__face--front  { transform: rotateY(  0deg) translateZ(50px); }
-        .cube__face--right  { transform: rotateY( 90deg) translateZ(50px); }
-        .cube__face--back   { transform: rotateY(180deg) translateZ(50px); }
-        .cube__face--left   { transform: rotateY(-90deg) translateZ(50px); }
-        .cube__face--top    { transform: rotateX( 90deg) translateZ(50px); }
-        .cube__face--bottom { transform: rotateX(-90deg) translateZ(50px); }
-
-        /* Smooth color transition for pressure dots */
-        .sensor-dot {
-            transition: background-color 0.1s linear, box-shadow 0.1s linear, transform 0.1s;
-        }
+        body { margin: 0; overflow: hidden; background-color: #1e1e1e; color: white; font-family: sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; margin-right: 10px;}
+        button:hover { background: #0056b3; }
+        #disconnectBtn { background: #dc3545; }
+        #disconnectBtn:hover { background: #c82333; }
+        .data-readout { margin-top: 15px; font-size: 18px; font-family: monospace; }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
-<body class="bg-slate-900 text-slate-200 min-h-screen p-4 md:p-8 font-sans">
+<body>
 
-    <!-- Header -->
-    <header class="max-w-6xl mx-auto mb-8 flex justify-between items-end border-b border-slate-700 pb-4">
-        <div>
-            <h1 class="text-3xl font-bold text-white tracking-tight">Insole <span class="text-blue-500">Telemetry</span></h1>
-            <p class="text-slate-400 text-sm mt-1">Real-time IMU & FSR Diagnostics (Simulation Mode)</p>
+    <div id="ui">
+        <h2>Smart Insole (Wireless)</h2>
+        <button id="connectBtn">Connect Bluetooth</button>
+        <button id="disconnectBtn">Disconnect</button>
+        <p>Status: <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong></p>
+        <div class="data-readout">
+            <div>Pitch: <span id="pitchVal">0.0</span>&deg;</div>
+            <div>Roll: <span id="rollVal">0.0</span>&deg;</div>
         </div>
-        <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-            <span class="text-sm font-medium text-green-400">System Online</span>
-        </div>
-    </header>
+    </div>
 
-    <!-- Main Grid Layout -->
-    <main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-        <!-- LEFT COLUMN: FSR Data (8 Sensors) -->
-        <section class="lg:col-span-1 bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
-            <h2 class="text-xl font-semibold mb-6 flex items-center gap-2">
-                <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                FSR Pressure Matrix
-            </h2>
-            
-            <div class="relative w-full max-w-[250px] mx-auto aspect-[1/2] bg-slate-900 rounded-[60px] border-4 border-slate-700 p-4 shadow-inner">
-                <!-- SVG Foot Outline (Decorative) -->
-                <svg class="absolute inset-0 w-full h-full opacity-20 pointer-events-none" viewBox="0 0 100 200" preserveAspectRatio="none">
-                    <path d="M 50 10 C 70 10, 85 30, 85 60 C 85 100, 70 120, 70 150 C 70 180, 60 190, 50 190 C 40 190, 30 180, 30 150 C 30 120, 15 100, 15 60 C 15 30, 30 10, 50 10 Z" fill="white"/>
-                </svg>
-
-                <!-- Sensor Dots (Positioned relatively to the shoe shape) -->
-                <!-- Big Toe -->
-                <div id="dot-1" class="sensor-dot absolute w-8 h-8 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-xs font-bold top-[10%] right-[40%] transform translate-x-1/2">1</div>
-                <!-- Little Toes -->
-                <div id="dot-2" class="sensor-dot absolute w-6 h-6 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold top-[18%] left-[25%] transform -translate-x-1/2">2</div>
-                <!-- Ball Inner -->
-                <div id="dot-3" class="sensor-dot absolute w-8 h-8 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-xs font-bold top-[30%] right-[40%] transform translate-x-1/2">3</div>
-                <!-- Ball Outer -->
-                <div id="dot-4" class="sensor-dot absolute w-7 h-7 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold top-[35%] right-[22%] transform -translate-x-1/2">4</div>
-                <!-- Arch -->
-                <div id="dot-5" class="sensor-dot absolute w-7 h-7 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-xs font-bold top-[55%] right-[25%] transform translate-x-1/2">5</div>
-                <!-- Heel Inner -->
-                <div id="dot-6" class="sensor-dot absolute w-7 h-7 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-xs font-bold top-[70%] left-[30%] transform translate-x-1/2">6</div>
-                <!-- Heel Outer -->
-                <div id="dot-7" class="sensor-dot absolute w-7 h-7 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-xs font-bold top-[78%] right-[30%] transform -translate-x-1/2">7</div>
-                <!-- Heel Back -->
-                <div id="dot-8" class="sensor-dot absolute w-8 h-8 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center text-xs font-bold top-[88%] right-[22%] transform -translate-x-1/2">8</div>
-            </div>
-
-            <!-- FSR Raw Values Table -->
-            <div class="mt-6 grid grid-cols-2 gap-2 text-sm">
-                <div class="bg-slate-900 p-2 rounded flex justify-between"><span class="text-slate-500">CH1</span> <span id="val-1" class="font-mono text-blue-300">0</span></div>
-                <div class="bg-slate-900 p-2 rounded flex justify-between"><span class="text-slate-500">CH2</span> <span id="val-2" class="font-mono text-blue-300">0</span></div>
-                <div class="bg-slate-900 p-2 rounded flex justify-between"><span class="text-slate-500">CH3</span> <span id="val-3" class="font-mono text-blue-300">0</span></div>
-                <div class="bg-slate-900 p-2 rounded flex justify-between"><span class="text-slate-500">CH4</span> <span id="val-4" class="font-mono text-blue-300">0</span></div>
-                <div class="bg-slate-900 p-2 rounded flex justify-between"><span class="text-slate-500">CH5</span> <span id="val-5" class="font-mono text-blue-300">0</span></div>
-                <div class="bg-slate-900 p-2 rounded flex justify-between"><span class="text-slate-500">CH6</span> <span id="val-6" class="font-mono text-blue-300">0</span></div>
-                <div class="bg-slate-900 p-2 rounded flex justify-between"><span class="text-slate-500">CH7</span> <span id="val-7" class="font-mono text-blue-300">0</span></div>
-                <div class="bg-slate-900 p-2 rounded flex justify-between"><span class="text-slate-500">CH8</span> <span id="val-8" class="font-mono text-blue-300">0</span></div>
-            </div>
-        </section>
-
-        <!-- RIGHT COLUMN: IMU Data (6-Axis) -->
-        <section class="lg:col-span-2 space-y-8">
-            
-            <!-- 3D Visualization -->
-            <div class="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
-                <div>
-                    <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
-                        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
-                        Real-time 3D Orientation
-                    </h2>
-                    <p class="text-slate-400 text-sm max-w-xs">Virtual representation of the shoe's pitch and roll derived from accelerometer data.</p>
-                </div>
-                <div class="bg-slate-900 p-8 rounded-xl border border-slate-700 w-full md:w-auto flex justify-center">
-                    <!-- The 3D Cube -->
-                    <div class="scene">
-                        <div class="cube" id="imu-cube">
-                            <div class="cube__face cube__face--front">Shoe Toe</div>
-                            <div class="cube__face cube__face--back">Heel</div>
-                            <div class="cube__face cube__face--right">R</div>
-                            <div class="cube__face cube__face--left">L</div>
-                            <div class="cube__face cube__face--top">Top</div>
-                            <div class="cube__face cube__face--bottom">Sole</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 6-Axis Raw Data -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <!-- Accelerometer -->
-                <div class="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
-                    <h3 class="text-lg font-medium mb-4 text-slate-300 border-b border-slate-700 pb-2">Accelerometer (G)</h3>
-                    <div class="space-y-4">
-                        <div>
-                            <div class="flex justify-between mb-1"><span class="text-slate-400 font-mono">Acc_X (Roll)</span><span id="acc-x" class="font-mono text-white">0.00</span></div>
-                            <div class="w-full bg-slate-900 rounded-full h-2"><div id="bar-ax" class="bg-red-500 h-2 rounded-full" style="width: 50%"></div></div>
-                        </div>
-                        <div>
-                            <div class="flex justify-between mb-1"><span class="text-slate-400 font-mono">Acc_Y (Pitch)</span><span id="acc-y" class="font-mono text-white">0.00</span></div>
-                            <div class="w-full bg-slate-900 rounded-full h-2"><div id="bar-ay" class="bg-green-500 h-2 rounded-full" style="width: 50%"></div></div>
-                        </div>
-                        <div>
-                            <div class="flex justify-between mb-1"><span class="text-slate-400 font-mono">Acc_Z (Gravity)</span><span id="acc-z" class="font-mono text-white">0.00</span></div>
-                            <div class="w-full bg-slate-900 rounded-full h-2"><div id="bar-az" class="bg-blue-500 h-2 rounded-full" style="width: 50%"></div></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Gyroscope -->
-                <div class="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
-                    <h3 class="text-lg font-medium mb-4 text-slate-300 border-b border-slate-700 pb-2">Gyroscope (deg/s)</h3>
-                    <div class="space-y-4">
-                        <div>
-                            <div class="flex justify-between mb-1"><span class="text-slate-400 font-mono">Gyr_X</span><span id="gyr-x" class="font-mono text-white">0.00</span></div>
-                            <div class="w-full bg-slate-900 rounded-full h-2"><div id="bar-gx" class="bg-red-400 h-2 rounded-full" style="width: 50%"></div></div>
-                        </div>
-                        <div>
-                            <div class="flex justify-between mb-1"><span class="text-slate-400 font-mono">Gyr_Y</span><span id="gyr-y" class="font-mono text-white">0.00</span></div>
-                            <div class="w-full bg-slate-900 rounded-full h-2"><div id="bar-gy" class="bg-green-400 h-2 rounded-full" style="width: 50%"></div></div>
-                        </div>
-                        <div>
-                            <div class="flex justify-between mb-1"><span class="text-slate-400 font-mono">Gyr_Z</span><span id="gyr-z" class="font-mono text-white">0.00</span></div>
-                            <div class="w-full bg-slate-900 rounded-full h-2"><div id="bar-gz" class="bg-blue-400 h-2 rounded-full" style="width: 50%"></div></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-        </section>
-    </main>
-
-    <!-- Simulation Script (Replace later with WebSockets) -->
     <script>
-        let time = 0;
+        // --- 1. SETUP 3D SCENE ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
 
-        // Function to map a value from one range to another
-        function map(value, inMin, inMax, outMin, outMax) {
-            return (value - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 20, 10);
+        scene.add(directionalLight);
+
+        const geometry = new THREE.BoxGeometry(2, 0.2, 4); 
+        const material = new THREE.MeshPhongMaterial({ color: 0x00ff88 }); 
+        const board = new THREE.Mesh(geometry, material);
+        scene.add(board);
+        const axesHelper = new THREE.AxesHelper(3);
+        board.add(axesHelper);
+
+        camera.position.set(4, 3, 5);
+        camera.lookAt(0, 0, 0);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
         }
+        animate();
 
-        // The main physics simulator loop
-        function updateSensors() {
-            time += 0.15; // Advance simulation time
+        // --- 2. RUI SANTOS BLUETOOTH LOGIC ---
+        const connectButton = document.getElementById('connectBtn');
+        const disconnectButton = document.getElementById('disconnectBtn');
+        const bleStateContainer = document.getElementById('bleState');
 
-            // ==========================================
-            // 1. FAKE FSR DATA (Simulating a walking gait)
-            // ==========================================
-            // A typical step: Heel strikes first, rolls to arch/outer, then pushes off toes.
-            const phases = [
-                0.8, // CH1: Big Toe (pushes off last)
-                0.9, // CH2: Little Toes
-                0.6, // CH3: Ball Inner
-                0.5, // CH4: Ball Outer
-                0.4, // CH5: Arch
-                0.2, // CH6: Heel Inner
-                0.1, // CH7: Heel Outer
-                0.0  // CH8: Heel Back (strikes first)
-            ];
+        var deviceName ='SmartShoe';
+        var bleService = '4fafc201-1bfb-4fc5-9d4f-5b1cf0000000';
+        var sensorCharacteristic= 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 
-            for (let i = 0; i < 8; i++) {
-                // Generate a sine wave that pulses based on the walking phase
-                let pressure = Math.sin(time - phases[i] * 3) * 5000; 
-                
-                // Add tiny electrical noise
-                pressure += (Math.random() * 200 - 100); 
+        var bleServer;
+        var sensorCharacteristicFound;
 
-                // Clamp between 0 and 4095 (Standard ESP32 ADC limits)
-                pressure = Math.max(0, Math.min(4095, Math.floor(pressure)));
+        connectButton.addEventListener('click', (event) => {
+            if (isWebBluetoothEnabled()){ connectToDevice(); }
+        });
 
-                // Update text
-                document.getElementById(`val-${i+1}`).innerText = pressure.toString().padStart(4, '0');
+        disconnectButton.addEventListener('click', disconnectDevice);
 
-                // Update UI Dot Color (Interpolate from dark grey to bright red based on pressure)
-                const dot = document.getElementById(`dot-${i+1}`);
-                const intensity = pressure / 4095;
-                
-                if (intensity > 0.1) {
-                    // Active pressure
-                    dot.style.backgroundColor = `rgba(239, 68, 68, ${intensity})`; // Tailwind Red-500
-                    dot.style.borderColor = `rgba(248, 113, 113, ${intensity})`;
-                    dot.style.boxShadow = `0 0 ${10 * intensity}px rgba(239, 68, 68, ${intensity})`;
-                    dot.style.transform = `scale(${1 + (intensity * 0.2)})`; // slightly enlarge
-                } else {
-                    // Resting state
-                    dot.style.backgroundColor = '';
-                    dot.style.borderColor = '';
-                    dot.style.boxShadow = 'none';
-                    dot.style.transform = 'scale(1)';
-                }
+        function isWebBluetoothEnabled() {
+            if (!navigator.bluetooth) {
+                bleStateContainer.innerHTML = "Web Bluetooth not supported here!";
+                return false
             }
-
-            // ==========================================
-            // 2. FAKE IMU DATA (6-Axis)
-            // ==========================================
-            // Simulate the foot pitching up and down while walking
-            let pitch_angle = Math.sin(time) * 30; // +/- 30 degrees
-            let roll_angle = Math.cos(time * 0.5) * 15; // +/- 15 degrees
-
-            // Convert angles to rough Accelerometer G-forces
-            let ax = Math.sin(roll_angle * Math.PI / 180);
-            let ay = Math.sin(pitch_angle * Math.PI / 180);
-            let az = Math.cos(pitch_angle * Math.PI / 180) * Math.cos(roll_angle * Math.PI / 180);
-
-            // Add vibration noise to Accel
-            ax += (Math.random() * 0.1 - 0.05);
-            ay += (Math.random() * 0.1 - 0.05);
-            az += (Math.random() * 0.1 - 0.05);
-
-            // Simulate Gyroscope (derivative of angle = rate of rotation)
-            let gx = Math.cos(time) * 100 + (Math.random() * 4 - 2);
-            let gy = -Math.sin(time * 0.5) * 50 + (Math.random() * 4 - 2);
-            let gz = (Math.random() * 10 - 5); // mostly noise
-
-            // Update text elements
-            document.getElementById('acc-x').innerText = ax.toFixed(2);
-            document.getElementById('acc-y').innerText = ay.toFixed(2);
-            document.getElementById('acc-z').innerText = az.toFixed(2);
-            document.getElementById('gyr-x').innerText = gx.toFixed(1);
-            document.getElementById('gyr-y').innerText = gy.toFixed(1);
-            document.getElementById('gyr-z').innerText = gz.toFixed(1);
-
-            // Update progress bars (Visual aids)
-            document.getElementById('bar-ax').style.width = `${map(ax, -2, 2, 0, 100)}%`;
-            document.getElementById('bar-ay').style.width = `${map(ay, -2, 2, 0, 100)}%`;
-            document.getElementById('bar-az').style.width = `${map(az, -2, 2, 0, 100)}%`;
-            document.getElementById('bar-gx').style.width = `${map(gx, -250, 250, 0, 100)}%`;
-            document.getElementById('bar-gy').style.width = `${map(gy, -250, 250, 0, 100)}%`;
-            document.getElementById('bar-gz').style.width = `${map(gz, -250, 250, 0, 100)}%`;
-
-            // Update 3D Cube Rotation
-            // We use the raw angles to tilt the CSS cube
-            const cube = document.getElementById('imu-cube');
-            cube.style.transform = `translateZ(-50px) rotateX(${-pitch_angle}deg) rotateY(${roll_angle}deg)`;
+            return true
         }
 
-        // Run the simulation 20 times a second (50ms interval) to look smooth
-        setInterval(updateSensors, 50);
+        function connectToDevice(){
+            console.log('Initializing Bluetooth...');
+            bleStateContainer.innerHTML = 'Searching...';
+            
+            navigator.bluetooth.requestDevice({
+                filters: [{name: deviceName}],
+                optionalServices: [bleService]
+            })
+            .then(device => {
+                console.log('Device Selected:', device.name);
+                bleStateContainer.innerHTML = 'Connecting to ' + device.name;
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+                return device.gatt.connect();
+            })
+            .then(gattServer =>{
+                bleServer = gattServer;
+                console.log("Connected to GATT Server");
+                return bleServer.getPrimaryService(bleService);
+            })
+            .then(service => {
+                console.log("Service discovered:", service.uuid);
+                return service.getCharacteristic(sensorCharacteristic);
+            })
+            .then(characteristic => {
+                console.log("Characteristic discovered:", characteristic.uuid);
+                sensorCharacteristicFound = characteristic;
+                characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicChange);
+                characteristic.startNotifications();
+                bleStateContainer.innerHTML = 'Connected!';
+                bleStateContainer.style.color = "#24af37";
+            })
+            .catch(error => {
+                console.log('Error: ', error);
+                bleStateContainer.innerHTML = 'Error: Check Console';
+            })
+        }
 
+        function onDisconnected(event){
+            console.log('Device Disconnected:', event.target.device.name);
+            bleStateContainer.innerHTML = "Disconnected";
+            bleStateContainer.style.color = "#d13a30";
+        }
+
+        function handleCharacteristicChange(event){
+            const value = new TextDecoder().decode(event.target.value);
+            // Parse our "P:XX,R:YY" format
+            let parts = value.split(",");
+            if(parts.length === 2) {
+                let pitch = parseFloat(parts[0].replace("P:", ""));
+                let roll = parseFloat(parts[1].replace("R:", ""));
+
+                document.getElementById('pitchVal').innerText = pitch.toFixed(1);
+                document.getElementById('rollVal').innerText = roll.toFixed(1);
+
+                board.rotation.x = pitch * (Math.PI / 180);
+                board.rotation.z = -roll * (Math.PI / 180); 
+            }
+        }
+
+        function disconnectDevice() {
+            if (bleServer && bleServer.connected) {
+                bleServer.disconnect();
+            } else {
+                window.alert("Bluetooth is not connected.")
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
     </script>
 </body>
 </html>
