@@ -1,1 +1,160 @@
 
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Insole BLE 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1e1e1e; color: white; font-family: sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; margin-right: 10px;}
+        button:hover { background: #0056b3; }
+        #disconnectBtn { background: #dc3545; }
+        #disconnectBtn:hover { background: #c82333; }
+        .data-readout { margin-top: 15px; font-size: 18px; font-family: monospace; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="ui">
+        <h2>Smart Insole (Wireless)</h2>
+        <button id="connectBtn">Connect Bluetooth</button>
+        <button id="disconnectBtn">Disconnect</button>
+        <p>Status: <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong></p>
+        <div class="data-readout">
+            <div>Pitch: <span id="pitchVal">0.0</span>&deg;</div>
+            <div>Roll: <span id="rollVal">0.0</span>&deg;</div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. SETUP 3D SCENE ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 20, 10);
+        scene.add(directionalLight);
+
+        const geometry = new THREE.BoxGeometry(2, 0.2, 4); 
+        const material = new THREE.MeshPhongMaterial({ color: 0x00ff88 }); 
+        const board = new THREE.Mesh(geometry, material);
+        scene.add(board);
+        const axesHelper = new THREE.AxesHelper(3);
+        board.add(axesHelper);
+
+        camera.position.set(4, 3, 5);
+        camera.lookAt(0, 0, 0);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- 2. RUI SANTOS BLUETOOTH LOGIC ---
+        const connectButton = document.getElementById('connectBtn');
+        const disconnectButton = document.getElementById('disconnectBtn');
+        const bleStateContainer = document.getElementById('bleState');
+
+        var deviceName ='SmartShoe';
+        var bleService = '4fafc201-1bfb-4fc5-9d4f-5b1cf0000000';
+        var sensorCharacteristic= 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+
+        var bleServer;
+        var sensorCharacteristicFound;
+
+        connectButton.addEventListener('click', (event) => {
+            if (isWebBluetoothEnabled()){ connectToDevice(); }
+        });
+
+        disconnectButton.addEventListener('click', disconnectDevice);
+
+        function isWebBluetoothEnabled() {
+            if (!navigator.bluetooth) {
+                bleStateContainer.innerHTML = "Web Bluetooth not supported here!";
+                return false
+            }
+            return true
+        }
+
+        function connectToDevice(){
+            console.log('Initializing Bluetooth...');
+            bleStateContainer.innerHTML = 'Searching...';
+            
+            navigator.bluetooth.requestDevice({
+                filters: [{name: deviceName}],
+                optionalServices: [bleService]
+            })
+            .then(device => {
+                console.log('Device Selected:', device.name);
+                bleStateContainer.innerHTML = 'Connecting to ' + device.name;
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+                return device.gatt.connect();
+            })
+            .then(gattServer =>{
+                bleServer = gattServer;
+                console.log("Connected to GATT Server");
+                return bleServer.getPrimaryService(bleService);
+            })
+            .then(service => {
+                console.log("Service discovered:", service.uuid);
+                return service.getCharacteristic(sensorCharacteristic);
+            })
+            .then(characteristic => {
+                console.log("Characteristic discovered:", characteristic.uuid);
+                sensorCharacteristicFound = characteristic;
+                characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicChange);
+                characteristic.startNotifications();
+                bleStateContainer.innerHTML = 'Connected!';
+                bleStateContainer.style.color = "#24af37";
+            })
+            .catch(error => {
+                console.log('Error: ', error);
+                bleStateContainer.innerHTML = 'Error: Check Console';
+            })
+        }
+
+        function onDisconnected(event){
+            console.log('Device Disconnected:', event.target.device.name);
+            bleStateContainer.innerHTML = "Disconnected";
+            bleStateContainer.style.color = "#d13a30";
+        }
+
+        function handleCharacteristicChange(event){
+            const value = new TextDecoder().decode(event.target.value);
+            // Parse our "P:XX,R:YY" format
+            let parts = value.split(",");
+            if(parts.length === 2) {
+                let pitch = parseFloat(parts[0].replace("P:", ""));
+                let roll = parseFloat(parts[1].replace("R:", ""));
+
+                document.getElementById('pitchVal').innerText = pitch.toFixed(1);
+                document.getElementById('rollVal').innerText = roll.toFixed(1);
+
+                board.rotation.x = pitch * (Math.PI / 180);
+                board.rotation.z = -roll * (Math.PI / 180); 
+            }
+        }
+
+        function disconnectDevice() {
+            if (bleServer && bleServer.connected) {
+                bleServer.disconnect();
+            } else {
+                window.alert("Bluetooth is not connected.")
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>
