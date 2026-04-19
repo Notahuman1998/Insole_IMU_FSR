@@ -44,6 +44,8 @@
     });
 
     function processData(data) {
+        console.log("File loaded. Total rows found:", data.length);
+        
         let deltas = [];
         let sampleNumbers = [];
         let fsr3 = [];
@@ -51,21 +53,31 @@
 
         // Loop through the whole file
         for (let i = 1; i < data.length; i++) {
+            // SAFETY CHECK: Ensure the row actually exists
+            if (!data[i] || !data[i-1]) continue;
+            
             let current = data[i].Timestamp_ms;
             let previous = data[i-1].Timestamp_ms;
             
-            // Safety check: ensure the row is valid before parsing
-            if (current != null && previous != null) {
+            // SAFETY CHECK: Ensure the timestamps are actual numbers and not blank
+            if (typeof current === 'number' && typeof previous === 'number') {
                 deltas.push(current - previous);
                 sampleNumbers.push(i);
 
-                // If FSR > 0 (pressed), keep it. If -1 (unpressed), set to null so the line breaks.
-                let val3 = data[i].FSR3 > 0 ? data[i].FSR3 : null;
-                let val4 = data[i].FSR4 > 0 ? data[i].FSR4 : null;
+                // If FSR > 0 (pressed), keep it. If missing or -1 (unpressed), set to null so the line breaks.
+                let val3 = (data[i].FSR3 !== undefined && data[i].FSR3 > 0) ? data[i].FSR3 : null;
+                let val4 = (data[i].FSR4 !== undefined && data[i].FSR4 > 0) ? data[i].FSR4 : null;
                 
                 fsr3.push(val3);
                 fsr4.push(val4);
             }
+        }
+
+        console.log("Successfully processed valid rows:", deltas.length);
+
+        if (deltas.length === 0) {
+            document.getElementById('stats').innerText = "Error: No valid Timestamp_ms data found in CSV.";
+            return;
         }
 
         // Calculate Mean and Standard Deviation
@@ -78,6 +90,7 @@
             `Average Time Between Packets: ${mean.toFixed(2)} ms | Standard Deviation: ${stdDev.toFixed(2)} ms`;
 
         // Plot the data!
+        console.log("Drawing graphs...");
         plotLatency(sampleNumbers, deltas);
         plotFSR(sampleNumbers, fsr3, fsr4);
     }
