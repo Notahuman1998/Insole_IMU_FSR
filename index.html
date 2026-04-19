@@ -1,33 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Insole Data Viewer</title>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <style>
-        body { font-family: sans-serif; background-color: #f4f4f9; padding: 20px; text-align: center; }
-        .container { max-w-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        h1 { color: #333; }
-        .upload-btn { margin: 20px 0; padding: 10px 20px; font-size: 16px; cursor: pointer; }
-        .chart { width: 100%; height: 400px; margin-top: 30px; }
-        #stats { font-weight: bold; color: #d9534f; margin-top: 10px; }
-    </style>
-</head>
-<body>
-
-<div class="container">
-    <h1>Smart Insole Data Viewer</h1>
-    <p>Upload your CSV file to visualize Latency Jitter and FSR Pressure.</p>
-    
-    <input type="file" id="csvFileInput" accept=".csv" class="upload-btn" />
-    <div id="stats"></div>
-
-    <div id="latencyChart" class="chart"></div>
-    <div id="fsrChart" class="chart"></div>
-</div>
-
 <script>
     document.getElementById('csvFileInput').addEventListener('change', function(event) {
         const file = event.target.files[0];
@@ -35,7 +5,7 @@
 
         Papa.parse(file, {
             header: true,
-            dynamicTyping: true, // Automatically converts numbers
+            dynamicTyping: true, // Automatically converts text numbers to actual numbers
             skipEmptyLines: true,
             complete: function(results) {
                 processData(results.data);
@@ -44,30 +14,31 @@
     });
 
     function processData(data) {
-        let timestamps = [];
         let deltas = [];
+        let sampleNumbers = [];
         let fsr3 = [];
         let fsr4 = [];
-        let sampleNumbers = [];
 
-        // Calculate Deltas (Time between packets)
+        // Loop through the whole file
         for (let i = 1; i < data.length; i++) {
             let current = data[i].Timestamp_ms;
             let previous = data[i-1].Timestamp_ms;
             
-            if (current && previous) {
+            // Safety check: ensure the row is valid before parsing
+            if (current != null && previous != null) {
                 deltas.push(current - previous);
                 sampleNumbers.push(i);
-            }
 
-            // Grab FSR3 and FSR4 data, ignore -1 (unpressed)
-            let val3 = data[i].FSR3 > 0 ? data[i].FSR3 : null;
-            let val4 = data[i].FSR4 > 0 ? data[i].FSR4 : null;
-            fsr3.push(val3);
-            fsr4.push(val4);
+                // If FSR > 0 (pressed), keep it. If -1 (unpressed), set to null so the line breaks.
+                let val3 = data[i].FSR3 > 0 ? data[i].FSR3 : null;
+                let val4 = data[i].FSR4 > 0 ? data[i].FSR4 : null;
+                
+                fsr3.push(val3);
+                fsr4.push(val4);
+            }
         }
 
-        // Calculate Mean and Std Dev for Deltas
+        // Calculate Mean and Standard Deviation
         let sum = deltas.reduce((a, b) => a + b, 0);
         let mean = sum / deltas.length;
         let variance = deltas.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / deltas.length;
@@ -76,26 +47,23 @@
         document.getElementById('stats').innerText = 
             `Average Time Between Packets: ${mean.toFixed(2)} ms | Standard Deviation: ${stdDev.toFixed(2)} ms`;
 
+        // Plot the data!
         plotLatency(sampleNumbers, deltas);
         plotFSR(sampleNumbers, fsr3, fsr4);
     }
 
     function plotLatency(xData, yData) {
-        // Limit to first 500 samples so it looks like the Python graph
-        let xSubset = xData.slice(0, 500);
-        let ySubset = yData.slice(0, 500);
-
         let trace1 = {
-            x: xSubset,
-            y: ySubset,
+            x: xData,
+            y: yData,
             mode: 'lines+markers',
             name: 'Delta Time (ms)',
             line: {color: '#007bff', width: 1},
-            marker: {size: 4}
+            marker: {size: 3} // Smaller markers for large datasets
         };
 
         let targetLine = {
-            x: [xSubset[0], xSubset[xSubset.length-1]],
+            x: [xData[0], xData[xData.length-1]],
             y: [10, 10],
             mode: 'lines',
             name: 'Target (10ms)',
@@ -103,7 +71,7 @@
         };
 
         let layout = {
-            title: 'Time Between Packets (Latency Jitter - First 500 Samples)',
+            title: 'Time Between Packets (Latency Jitter)',
             xaxis: {title: 'Sample Number'},
             yaxis: {title: 'Delta Time (ms)'}
         };
@@ -112,27 +80,24 @@
     }
 
     function plotFSR(xData, fsr3, fsr4) {
-        // Limit to first 300 samples so it looks like the Python graph
-        let xSubset = xData.slice(0, 300);
-
         let trace3 = {
-            x: xSubset,
-            y: fsr3.slice(0, 300),
+            x: xData,
+            y: fsr3,
             mode: 'lines+markers',
             name: 'FSR3',
-            connectgaps: false, // Breaks the line where it is -1
+            connectgaps: false, // This makes the line disappear when the foot is lifted
             line: {width: 2},
-            marker: {size: 4}
+            marker: {size: 3}
         };
 
         let trace4 = {
-            x: xSubset,
-            y: fsr4.slice(0, 300),
+            x: xData,
+            y: fsr4,
             mode: 'lines+markers',
             name: 'FSR4',
             connectgaps: false,
             line: {width: 2},
-            marker: {size: 4}
+            marker: {size: 3}
         };
 
         let layout = {
@@ -144,6 +109,3 @@
         Plotly.newPlot('fsrChart', [trace3, trace4], layout);
     }
 </script>
-
-</body>
-</html>
